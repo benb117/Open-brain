@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Openbrain</title>
+<style>
+  :root {
+    --bg: #0e0e0e;
+    --surface: #161616;
+    --border: #2a2a2a;
+    --text: #e8e4dc;
+    --muted: #666;
+    --accent: #ffffff;
+    --accent-bright: #cccccc;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 560px;
+  }
+
+  .header {
+    margin-bottom: 28px;
+  }
+
+  .header h1 {
+    font-size: 22px;
+    font-weight: 400;
+    color: #ffffff;
+    letter-spacing: -0.3px;
+  }
+
+  .form-group {
+    position: relative;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 160px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 14px;
+    color: var(--text);
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.7;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  textarea::placeholder { color: var(--muted); }
+
+  textarea:focus {
+    border-color: var(--accent-bright);
+  }
+
+  .char-count {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    font-size: 10px;
+    color: var(--muted);
+    pointer-events: none;
+  }
+
+  .actions {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  button {
+    background: var(--accent);
+    color: #0e0e0e;
+    border: none;
+    border-radius: 3px;
+    padding: 9px 20px;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  button:hover { background: var(--accent-bright); }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .shortcut {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .status {
+    margin-top: 14px;
+    font-size: 12px;
+    min-height: 18px;
+  }
+
+  .status.success { color: var(--accent-bright); }
+  .status.error { color: #ff6b6b; }
+  .status.loading { color: var(--muted); }
+
+  .recent {
+    margin-top: 36px;
+    border-top: 1px solid var(--border);
+    padding-top: 20px;
+  }
+
+  .recent-header {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .thought-item {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    line-height: 1.6;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .thought-item:last-child { border-bottom: none; }
+
+  .thought-time {
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    padding-top: 2px;
+    min-width: 48px;
+  }
+
+  .thought-text {
+    flex: 1;
+    color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1>Openbrain</h1>
+  </div>
+
+  <div class="form-group">
+    <textarea id="thought" placeholder="What's on your mind..." autofocus></textarea>
+    <span class="char-count" id="charCount">0</span>
+  </div>
+
+  <div class="actions">
+    <button id="saveBtn" onclick="capture()">Save</button>
+    <span class="shortcut">⌘ + Enter</span>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <div class="recent" id="recentSection" style="display:none">
+    <div class="recent-header">Recent</div>
+    <div id="recentList"></div>
+  </div>
+</div>
+
+<script>
+  const MCP_URL = 'https://zqhaniumujecigfffqnb.supabase.co/functions/v1/open-brain-mcp';
+  const MCP_KEY = '7f2d0520c09180c2884cc80be3f87273fd0631760b9e853ff6a93b7d6138d70f';
+
+  const textarea = document.getElementById('thought');
+  const status = document.getElementById('status');
+  const saveBtn = document.getElementById('saveBtn');
+  const charCount = document.getElementById('charCount');
+
+  textarea.addEventListener('input', () => {
+    charCount.textContent = textarea.value.length;
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') capture();
+  });
+
+  async function capture() {
+    const text = textarea.value.trim();
+    if (!text) return;
+
+    saveBtn.disabled = true;
+    setStatus('loading', 'Saving...');
+
+    try {
+      const res = await fetch(`${MCP_URL}?key=${MCP_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'capture_thought',
+            arguments: { content: text }
+          }
+        })
+      });
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+
+      setStatus('success', '✓ Captured');
+      textarea.value = '';
+      charCount.textContent = '0';
+      loadRecent();
+      setTimeout(() => setStatus('', ''), 3000);
+    } catch (err) {
+      setStatus('error', '✗ Failed — ' + err.message);
+    } finally {
+      saveBtn.disabled = false;
+      textarea.focus();
+    }
+  }
+
+  function setStatus(type, msg) {
+    status.className = 'status ' + type;
+    status.textContent = msg;
+  }
+
+  function timeAgo(dateStr) {
+    const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+    if (diff < 60) return 'now';
+    if (diff < 3600) return Math.floor(diff/60) + 'm';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h';
+    return Math.floor(diff/86400) + 'd';
+  }
+
+  async function loadRecent() {
+    try {
+      const res = await fetch(`${MCP_URL}?key=${MCP_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: { name: 'recent_thoughts', arguments: { limit: 5 } }
+        })
+      });
+
+      const data = await res.json();
+      const thoughts = JSON.parse(data.result.content[0].text);
+      if (!thoughts || thoughts.length === 0) return;
+
+      document.getElementById('recentSection').style.display = 'block';
+      document.getElementById('recentList').innerHTML = thoughts.map(t => `
+        <div class="thought-item">
+          <span class="thought-time">${timeAgo(t.created_at)}</span>
+          <span class="thought-text">${t.content.slice(0, 120)}${t.content.length > 120 ? '…' : ''}</span>
+        </div>
+      `).join('');
+    } catch (e) {}
+  }
+
+  loadRecent();
+</script>
+</body>
+</html>
